@@ -1,0 +1,3 @@
+[submodule "ANDA"]
+	path = ANDA
+	url = https://github.com/alfredoLimo/ANDA.git
