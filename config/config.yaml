@@ -1,0 +1,27 @@
+experiment_name: "AdaFLUX-LoRA"
+seed: 42
+
+federated:
+  rounds: 10
+  fit_clients_per_round: 3
+  eval_clients_per_round: 6
+
+model:
+  base_model: "google/t5-base"
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.1
+
+training:
+  batch_size: 8
+  local_epochs: 2
+  lr: 5e-4
+
+clustering:
+  enabled: true
+  algorithm: "dbscan"
+  recluster_every: 3
+
+logging:
+  tensorboard: true
+  save_checkpoints: true
