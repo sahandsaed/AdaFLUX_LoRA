@@ -1,21 +1,53 @@
-experiment_name: "AdaFLUX-LoRA"
+experiment_name: "AdaFLUX-LoRA-CIFAR10-ANDA"
 seed: 42
+
+# ✅ NEW: dataset/splitting section (ANDA settings + CIFAR10 details)
+dataset:
+  name: "CIFAR10"
+  num_classes: 10
+  num_clients: 15
+
+  # ANDA split configuration
+  split_generator: "ANDA"
+  non_iid_type: "label_skew"     # you can change later (feature_skew, split_unbalanced, etc.)
+  mode: "auto"
+  non_iid_level: "medium"        # <- your requested heterogeneity level
+  out_dir: "data/cur_datasets"   # where client_0.npy ... client_14.npy will be saved
+  drifting: false                # static splits (recommended for first run)
 
 federated:
   rounds: 10
   fit_clients_per_round: 3
   eval_clients_per_round: 6
 
+  # ✅ NEW (recommended for Colab/local runs)
+  ip: "127.0.0.1"
+  port: 8080
+
 model:
-  base_model: "google/t5-base"
+  # ✅ CHANGED: image classification model (ViT) instead of T5
+  # Recommended because it’s already fine-tuned on CIFAR10
+  base_model: "nateraw/vit-base-patch16-224-cifar10"
+
+  # LoRA/AdaLoRA settings (keep yours; you can increase r later if needed)
   lora_r: 8
   lora_alpha: 16
   lora_dropout: 0.1
 
+  # ✅ NEW (recommended): target modules for ViT attention
+  # (matches your code's default idea: ["query","key","value"])
+  lora_target_modules: ["query", "key", "value"]
+
 training:
   batch_size: 8
   local_epochs: 2
+
+  # Keep your LR (works, but may be slow for LoRA).
+  # Optional suggestion: 1e-3 to 5e-3 often works better for LoRA on ViT.
   lr: 5e-4
+
+  # ✅ NEW (optional but common)
+  weight_decay: 0.05
 
 clustering:
   enabled: true
