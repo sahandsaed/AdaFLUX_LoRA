@@ -2,7 +2,7 @@ import numpy as np
 if not hasattr(np, "float_"):
     np.float_ = np.float64
 
-import os, sys, json, argparse
+import sys, json, argparse
 from functools import reduce
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -12,14 +12,13 @@ from flwr.common import parameters_to_ndarrays, ndarrays_to_parameters
 import torch
 from sklearn.cluster import DBSCAN
 
-# Repo root
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT_DIR))
 
-import public.config as cfg
-import public.utils as utils
+import config as cfg
+import utils
 
-from client import build_vit_adalora, collect_lora_keys  # <-- reuse client public funcs
+from client import build_vit_adalora, collect_lora_keys
 
 
 def aggregate_weights(weighted_updates):
@@ -45,7 +44,7 @@ class FLUXClusterManager:
             return False
 
         cids = sorted(self.descriptors.keys())
-        X = np.stack([self.descriptors[c] for c in cids])  # [N, D]
+        X = np.stack([self.descriptors[c] for c in cids])
         d = np.linalg.norm(X[:, None] - X[None, :], axis=-1)
         eps = max(np.percentile(d, 25), 1e-6)
         labels = DBSCAN(eps=eps, min_samples=2).fit(X).labels_
@@ -80,20 +79,14 @@ class AdaFLUXClusterStrategy(fl.server.strategy.FedAvg):
         return ndarrays_to_parameters(tensors)
 
     def aggregate_fit(self, rnd, results, failures):
-        # Collect descriptors
         for proxy, fit_res in results:
             m = fit_res.metrics or {}
             if "descriptor" in m:
-                try:
-                    cid = int(proxy.cid)
-                    self.cluster_mgr.update_descriptor(cid, m["descriptor"])
-                except Exception as e:
-                    print(f"[server] Descriptor parse failed: {e}")
+                cid = int(proxy.cid)
+                self.cluster_mgr.update_descriptor(cid, m["descriptor"])
 
-        # recluster
         self.cluster_mgr.recluster(rnd)
 
-        # group updates by cluster
         clusters: Dict[int, List[Tuple[List[np.ndarray], int]]] = {}
         for proxy, fit_res in results:
             cid = int(proxy.cid)
@@ -106,7 +99,6 @@ class AdaFLUXClusterStrategy(fl.server.strategy.FedAvg):
             merged = aggregate_weights(updates)
             aggregated_per_cluster[cl] = merged
 
-            # checkpoint
             ckpt_dir = Path("checkpoints") / self.exp_dir
             ckpt_dir.mkdir(parents=True, exist_ok=True)
             torch.save(
@@ -114,22 +106,14 @@ class AdaFLUXClusterStrategy(fl.server.strategy.FedAvg):
                 ckpt_dir / f"cluster_{cl}_round_{rnd}.pt",
             )
 
-        # return a global fallback (Flower will broadcast same params to all clients)
-        if -1 in aggregated_per_cluster:
-            new_params = aggregated_per_cluster[-1]
-        else:
-            new_params = list(aggregated_per_cluster.values())[0]
-
+        new_params = aggregated_per_cluster.get(-1) or list(aggregated_per_cluster.values())[0]
         metrics = {"clusters": json.dumps(self.cluster_mgr.summary())}
         print(f"[server] Round {rnd} clusters: {self.cluster_mgr.summary()}")
         return ndarrays_to_parameters(new_params), metrics
 
 
 def fit_cfg(rnd: int):
-    return {
-        "current_round": rnd,
-        "local_epochs": int(getattr(cfg, "local_epochs", 1)),
-    }
+    return {"current_round": rnd, "local_epochs": int(cfg.local_epochs)}
 
 
 def eval_weighted(mets):
@@ -143,17 +127,14 @@ def main():
     ap.add_argument("--fold", type=int, default=0)
     args = ap.parse_args()
 
-    run_dir = getattr(utils, "create_folders", lambda: "run_default")()
-    utils.set_seed(int(getattr(cfg, "random_seed", 42)) + int(args.fold))
+    run_dir = "run_default"
+    utils.set_seed(int(cfg.random_seed) + int(args.fold))
 
     device = utils.check_gpu()
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    model = build_vit_adalora(num_classes=int(getattr(cfg, "n_classes", 10))).to(device)
+    model = build_vit_adalora(num_classes=int(cfg.n_classes)).to(device)
     lora_keys = collect_lora_keys(model.state_dict().keys(), include_head=False)
 
-    cluster_mgr = FLUXClusterManager(recluster_every=int(getattr(cfg, "cluster_update_interval", 3)))
+    cluster_mgr = FLUXClusterManager(recluster_every=int(cfg.cluster_update_interval))
 
     strategy = AdaFLUXClusterStrategy(
         model=model,
@@ -162,18 +143,14 @@ def main():
         exp_dir=run_dir,
         fraction_fit=1.0,
         fraction_evaluate=1.0,
-        min_available_clients=int(getattr(cfg, "n_clients", 15)),
+        min_available_clients=int(cfg.n_clients),
         on_fit_config_fn=fit_cfg,
         evaluate_metrics_aggregation_fn=eval_weighted,
     )
 
-    ip = getattr(cfg, "ip", "127.0.0.1")
-    port = int(getattr(cfg, "port", 8080))
-    rounds = int(getattr(cfg, "n_rounds", 10))
-
     fl.server.start_server(
-        server_address=f"{ip}:{port}",
-        config=fl.server.ServerConfig(num_rounds=rounds),
+        server_address=f"{cfg.ip}:{cfg.port}",
+        config=fl.server.ServerConfig(num_rounds=int(cfg.n_rounds)),
         strategy=strategy,
     )
 

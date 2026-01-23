@@ -1,53 +1,48 @@
-experiment_name: "AdaFLUX-LoRA-CIFAR10-ANDA"
+experiment_name: "AdaFLUX-LoRA-CIFAR10"
 seed: 42
 
-# ✅ NEW: dataset/splitting section (ANDA settings + CIFAR10 details)
 dataset:
   name: "CIFAR10"
   num_classes: 10
   num_clients: 15
 
-  # ANDA split configuration
-  split_generator: "ANDA"
-  non_iid_type: "label_skew"     # you can change later (feature_skew, split_unbalanced, etc.)
-  mode: "auto"
-  non_iid_level: "medium"        # <- your requested heterogeneity level
-  out_dir: "data/cur_datasets"   # where client_0.npy ... client_14.npy will be saved
-  drifting: false                # static splits (recommended for first run)
+  # We use tools/make_split.py (Dirichlet label-skew) in Colab
+  split_generator: "DIRICHLET"
+  non_iid_type: "label_skew"
+  non_iid_level: "medium"
+  out_dir: "data/cur_datasets"
+  drifting: false
 
 federated:
   rounds: 10
   fit_clients_per_round: 3
   eval_clients_per_round: 6
-
-  # ✅ NEW (recommended for Colab/local runs)
   ip: "127.0.0.1"
   port: 8080
 
 model:
-  # ✅ CHANGED: image classification model (ViT) instead of T5
-  # Recommended because it’s already fine-tuned on CIFAR10
   base_model: "nateraw/vit-base-patch16-224-cifar10"
 
-  # LoRA/AdaLoRA settings (keep yours; you can increase r later if needed)
   lora_r: 8
   lora_alpha: 16
   lora_dropout: 0.1
-
-  # ✅ NEW (recommended): target modules for ViT attention
-  # (matches your code's default idea: ["query","key","value"])
   lora_target_modules: ["query", "key", "value"]
+
+  # ✅ Real AdaLoRA schedule (step-based)
+  # Choose tfinal ~ (local_epochs * steps_per_epoch). If unsure, 500/50 is a safe start.
+  adalora_tinit: 0
+  adalora_tfinal: 500
+  adalora_deltaT: 50
+  adalora_beta1: 0.85
+  adalora_beta2: 0.85
+  adalora_orth_reg: 0.0
 
 training:
   batch_size: 8
   local_epochs: 2
-
-  # Keep your LR (works, but may be slow for LoRA).
-  # Optional suggestion: 1e-3 to 5e-3 often works better for LoRA on ViT.
   lr: 5e-4
-
-  # ✅ NEW (optional but common)
   weight_decay: 0.05
+  client_eval_ratio: 0.2
 
 clustering:
   enabled: true
