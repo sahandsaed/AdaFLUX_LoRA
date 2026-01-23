@@ -22,16 +22,23 @@ from typing import Dict, List, Tuple
 import torch
 from sklearn.cluster import DBSCAN
 
-# Repo root
+import numpy as np
+if not hasattr(np, "float_"):
+    np.float_ = np.float64
+
+import sys
+from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT_DIR))
 
-import public.config as cfg
-import public.utils as utils
+import config as cfg
+import utils
+
 
 from client import FlowerClient, build_vit_adalora, collect_lora_keys, vit_descriptor_vector
 from logging_utils import TensorboardLogger
 from visualize_clusters import plot_flux_embeddings
+
 
 
 def aggregate_cluster_updates(results: List[Tuple[List[np.ndarray], int]]) -> List[np.ndarray]:

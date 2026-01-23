@@ -1,23 +1,13 @@
-"""
-AdaFLUX-LoRA client side (fixed + Colab-safe).
-
-Key fixes:
-- Syntax/indentation fixed
-- Colab-safe absolute paths
-- Descriptor is a fixed-length vector and returned to server as metrics["descriptor"]
-- CIFAR10 .npy loading uses data/cur_datasets/client_{id}.npy created by tools/make_anda_splits.py
-"""
-
 import numpy as np
 if not hasattr(np, "float_"):
     np.float_ = np.float64
 
 import argparse
 import gc
-import json
 import os
+import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List
 
 import flwr as fl
 import torch
@@ -25,18 +15,33 @@ import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 
-# Project root
+# ---- NEW: make repo root importable ----
 ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(ROOT_DIR))
 DATA_ROOT = ROOT_DIR / "data" / "cur_datasets"
 
-# Import shared config/utils/models
-import public.config as cfg
-import public.utils as utils
-import public.models as models
+# ---- NEW: correct imports (no public/) ----
+import config as cfg
+import utils
 
-from transformers import AutoTokenizer, T5ForConditionalGeneration, ViTForImageClassification
+from transformers import ViTForImageClassification
 from peft import AdaLoraConfig, get_peft_model
 
+class CombinedDataset(Dataset):
+    def __init__(self, X, y, transform=None):
+        self.X = X
+        self.y = y
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        x = self.X[idx]
+        y = self.y[idx]
+        if self.transform is not None:
+            x = self.transform(x)
+        return x, y
 
 IS_SUMMARIZATION = getattr(cfg, "dataset_name", "CIFAR10") == "Summarization"
 
@@ -347,10 +352,10 @@ class FlowerClient(fl.client.NumPyClient):
         )
 
         if train:
-            ds = models.CombinedDataset(X_train, y_train, transform=None)
+            ds = CombinedDataset(X_train, y_train, transform=None)
             return DataLoader(ds, batch_size=int(getattr(cfg, "batch_size", 8)), shuffle=True)
         else:
-            ds = models.CombinedDataset(X_val, y_val, transform=None)
+            ds = CombinedDataset(X_train, y_train, transform=None)
             return DataLoader(ds, batch_size=int(getattr(cfg, "test_batch_size", 16)), shuffle=False)
 
     # -------- Flower param exchange --------
