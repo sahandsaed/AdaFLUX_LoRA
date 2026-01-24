@@ -171,6 +171,43 @@ def main():
     Path("results_local").mkdir(exist_ok=True)
     np.save("results_local/history.npy", history)
 
+    import json
+    from pathlib import Path
+
+    out_meta_dir = Path("results")   # match your notebook expectation
+    out_meta_dir.mkdir(exist_ok=True)
+
+    ckpt_dir = Path("checkpoints")
+    ckpt_dir.mkdir(exist_ok=True)
+
+    # Save final global checkpoint
+    global_ckpt_path = ckpt_dir / "global_final.pt"
+    torch.save(
+        {"keys": lora_keys, "tensors": [torch.tensor(x) for x in global_params]},
+        global_ckpt_path
+    )
+
+    # Save per-client checkpoints (final state of each client's model)
+    client_ckpts = {}
+    for cid in range(n_clients):
+        path = ckpt_dir / f"client_{cid}_final.pt"
+        client_state = get_state(clients[cid].model, lora_keys)
+        torch.save({"keys": lora_keys, "tensors": [torch.tensor(x) for x in client_state]}, path)
+        client_ckpts[str(cid)] = str(path)
+
+    # Save cluster assignments metadata
+    cluster_info = {
+        "client_to_cluster": {str(k): int(v) for k, v in cluster_mgr.client_to_cluster.items()},
+        "client_checkpoints": client_ckpts,
+        "global_checkpoint": str(global_ckpt_path),
+    }
+
+    with open(out_meta_dir / "cluster_assignments.json", "w") as f:
+        json.dump(cluster_info, f, indent=2)
+
+    print(f"[fedseq] Saved analysis metadata to {out_meta_dir/'cluster_assignments.json'}")
+    print(f"[fedseq] Saved checkpoints to {ckpt_dir}/")
+
     logger.close()
     print("💾 Logs saved and logger closed.")
 
